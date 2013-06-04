@@ -1,0 +1,27 @@
+From a620af240af7692bb753f6eda4121c449cb68fae Mon Sep 17 00:00:00 2001
+From: Benjamin Kaduk <kaduk@mit.edu>
+Date: Mon, 3 Jun 2013 21:14:26 -0400
+Subject: [PATCH] Update TSM64 path for multiarch
+
+The upstream tarball wants to drop a symlink in /usr/lib64 but
+we put it in the multiarch-appropriate location.
+---
+ src/butc/afsxbsa.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/butc/afsxbsa.c b/src/butc/afsxbsa.c
+index cb8a7a1..2f15b82 100644
+--- a/src/butc/afsxbsa.c
++++ b/src/butc/afsxbsa.c
+@@ -651,7 +651,7 @@ void * dynlib = NULL ;
+ #if defined(AFS_AIX_ENV)
+         dynlib = dlopen("/usr/lib/libApiDS.a(dsmapish.o)", RTLD_NOW | RTLD_LOCAL | RTLD_MEMBER);
+ #elif defined (AFS_AMD64_LINUX26_ENV)
+-	dynlib = dlopen("/usr/lib64/libApiTSM64.so", RTLD_NOW | RTLD_LOCAL);
++	dynlib = dlopen("/usr/lib/x86_64-linux-gnu/libApiTSM64.so", RTLD_NOW | RTLD_LOCAL);
+ #elif defined(AFS_SUN5_ENV) || defined(AFS_LINUX26_ENV)
+         dynlib = dlopen("/usr/lib/libApiDS.so", RTLD_NOW | RTLD_LOCAL);
+ #else
+-- 
+2.5.0
+
