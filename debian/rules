@@ -106,7 +106,8 @@ override_dh_auto_configure:
 	    --with-afs-sysname=$(SYS_NAME) --disable-kernel-module	   \
 	    --prefix=/usr --mandir=\$${prefix}/share/man		   \
 	    --sysconfdir=/etc --libexecdir=/usr/lib --with-krb5		   \
-	    --localstatedir=/var/lib --enable-supergroups		   \
+	    --localstatedir=/var/lib --enable-namei-fileserver		   \
+	    --enable-tivoli-tsm						   \
 	    --enable-fuse-client --enable-debug --enable-debug-lwp	   \
 	    --with-docbook2pdf=dblatex --with-xslt-processor=xsltproc	   \
 	    --with-html-xsl=$(HTML_XSL)					   \
