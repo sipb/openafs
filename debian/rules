@@ -98,7 +98,7 @@ get-orig-source:
 
 # Use dh for most actions, with overrides below.
 %:
-	dh $@ --with-systemd
+	dh $@
 
 # Handle the renaming of the up man page to afs-up here since the man pages
 # are generated from POD source by regen.sh.
@@ -244,7 +244,6 @@ override_dh_install-indep:
 
 # We don't want to stop the init scripts on upgrade.
 override_dh_installinit:
-	dh_systemd_enable
 	dh_installinit -popenafs-client -r
 	dh_installinit -popenafs-fileserver -r
 
