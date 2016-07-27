@@ -1,3 +1,17 @@
+openafs (1.6.18.2-1sipb1) unstable; urgency=low
+
+  [ Benjamin Kaduk ]
+  * Apply SIPB-specific configuration changes.  Note that we enable the
+    tivoli TSM code but the IS&T distribution of the TSM libraries do not
+    provide a package which we can build-depend on.  Reader beware....
+
+  [ Anders Kaseorg ]
+  * Backport to wheezy.
+    - Disable systemd support.
+  * Squash a frightening number of warnings from XBSA-related code.
+
+ -- Anders Kaseorg <andersk@mit.edu>  Wed, 27 Jul 2016 05:54:32 -0400
+
 openafs (1.6.18.2-1) unstable; urgency=medium
 
   * New upstream release 1.6.18.2:
