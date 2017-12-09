@@ -1,3 +1,4 @@
 0003-Add-dummy-exit-command-for-afsd-to-do-nothing.patch
 1002-Update-TSM64-path-for-multiarch.patch
 1003-Squash-a-frightening-number-of-warnings-from-XBSA-re.patch
+0015-OPENAFS-SA-2017-001-rx-Sanity-check-received-MTU-and.patch

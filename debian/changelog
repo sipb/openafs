@@ -1,3 +1,11 @@
+openafs (1.6.18.2-1sipb2) unstable; urgency=low
+
+  [ Benjamin Kaduk ]
+  * Backport patch for OPENAFS-SA-2017-001 (insufficient validation of rx
+    ack packets leads to remote DoS).
+
+ -- Benjamin Kaduk <kaduk@mit.edu>  Sat, 09 Dec 2017 15:07:57 -0500
+
 openafs (1.6.18.2-1sipb1) unstable; urgency=low
 
   [ Benjamin Kaduk ]

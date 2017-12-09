@@ -1,0 +1,76 @@
+From: Benjamin Kaduk <kaduk@mit.edu>
+Date: Mon, 4 Dec 2017 17:20:57 -0600
+Subject: OPENAFS-SA-2017-001: rx: Sanity-check received MTU and twind values
+
+Rather than blindly trusting the values received in the
+(unauthenticated) ack packet trailer, apply some minmial sanity checks
+to received values.  natMTU and regular MTU values are subject to
+Rx minmium/maximum packet sizes, and the transmit window cannot drop
+below one without risk of deadlock.
+
+The maxDgramPackets value that can also be present in the trailer
+already has sufficient sanity checking.
+
+Extremely low MTU values (less than 28 == RX_HEADER_SIZE) can cause us
+to set a negative "maximum usable data" size that gets used as an
+(unsigned) packet length for subsequent allocation and computation,
+triggering an assertion when the connection is used to transmit data.
+
+FIXES 134450
+
+(cherry picked from commit 894555f93a2571146cb9ca07140eb98c7a424b01)
+(cherry picked from commit eae2575dc738bd69bb6a0a84f87f02f5cf2b4eb9)
+
+Change-Id: Ic83c2eef69a9f59a0f0b1469681aaef9f42b0a18
+(cherry picked from commit a2266518d610ccabb7b389b273196695ba0c4f33)
+---
+ src/rx/rx.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/src/rx/rx.c b/src/rx/rx.c
+index 1fc7a20..a50fd25 100644
+--- a/src/rx/rx.c
++++ b/src/rx/rx.c
+@@ -4557,12 +4557,20 @@ rxi_ReceiveAckPacket(struct rx_call *call, struct rx_packet *np,
+ 	rx_packetread(np, rx_AckDataSize(ap->nAcks) + (int)sizeof(afs_int32),
+ 		      (int)sizeof(afs_int32), &tSize);
+ 	tSize = (afs_uint32) ntohl(tSize);
++	if (tSize > RX_MAX_PACKET_SIZE)
++	    tSize = RX_MAX_PACKET_SIZE;
++	if (tSize < RX_MIN_PACKET_SIZE)
++	    tSize = RX_MIN_PACKET_SIZE;
+ 	peer->natMTU = rxi_AdjustIfMTU(MIN(tSize, peer->ifMTU));
+ 
+ 	/* Get the maximum packet size to send to this peer */
+ 	rx_packetread(np, rx_AckDataSize(ap->nAcks), (int)sizeof(afs_int32),
+ 		      &tSize);
+ 	tSize = (afs_uint32) ntohl(tSize);
++	if (tSize > RX_MAX_PACKET_SIZE)
++	    tSize = RX_MAX_PACKET_SIZE;
++	if (tSize < RX_MIN_PACKET_SIZE)
++	    tSize = RX_MIN_PACKET_SIZE;
+ 	tSize = (afs_uint32) MIN(tSize, rx_MyMaxSendSize);
+ 	tSize = rxi_AdjustMaxMTU(peer->natMTU, tSize);
+ 
+@@ -4584,6 +4592,10 @@ rxi_ReceiveAckPacket(struct rx_call *call, struct rx_packet *np,
+ 			  rx_AckDataSize(ap->nAcks) + 2 * (int)sizeof(afs_int32),
+ 			  (int)sizeof(afs_int32), &tSize);
+ 	    tSize = (afs_uint32) ntohl(tSize);	/* peer's receive window, if it's */
++	    if (tSize == 0)
++		tSize = 1;
++	    if (tSize >= rx_maxSendWindow)
++		tSize = rx_maxSendWindow;
+ 	    if (tSize < call->twind) {	/* smaller than our send */
+ 		call->twind = tSize;	/* window, we must send less... */
+ 		call->ssthresh = MIN(call->twind, call->ssthresh);
+@@ -4605,6 +4617,10 @@ rxi_ReceiveAckPacket(struct rx_call *call, struct rx_packet *np,
+ 			  rx_AckDataSize(ap->nAcks) + 2 * (int)sizeof(afs_int32),
+ 			  sizeof(afs_int32), &tSize);
+ 	    tSize = (afs_uint32) ntohl(tSize);
++	    if (tSize == 0)
++		tSize = 1;
++	    if (tSize >= rx_maxSendWindow)
++		tSize = rx_maxSendWindow;
+ 	    /*
+ 	     * As of AFS 3.5 we set the send window to match the receive window.
+ 	     */
