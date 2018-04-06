@@ -1,3 +1,9 @@
+openafs (1.6.22.2-0ppa1) UNRELEASED; urgency=medium
+
+  * New upstream release, adding support for Linux kernel 4.15.
+
+ -- Anders Kaseorg <andersk@mit.edu>  Fri, 06 Apr 2018 17:36:58 -0400
+
 openafs (1.6.22-3) unstable; urgency=medium
 
   * Pull in upstream patch to avoid OOPS on linux 4.14 kernels.
