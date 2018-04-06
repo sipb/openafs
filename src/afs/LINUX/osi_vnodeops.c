@@ -807,7 +807,7 @@ struct file_operations afs_file_fops = {
 #ifdef STRUCT_FILE_OPERATIONS_HAS_READ_ITER
   .read_iter =	afs_linux_read_iter,
   .write_iter =	afs_linux_write_iter,
-# if !defined(HAVE_LINUX___VFS_READ)
+# if !defined(HAVE_LINUX___VFS_WRITE) && !defined(HAVE_LINUX_KERNEL_WRITE)
   .read =	new_sync_read,
   .write =	new_sync_write,
 # endif
@@ -872,11 +872,7 @@ canonical_dentry(struct inode *ip)
 
     d_prune_aliases(ip);
 
-# ifdef HAVE_DCACHE_LOCK
-    spin_lock(&dcache_lock);
-# else
-    spin_lock(&ip->i_lock);
-# endif
+    afs_d_alias_lock(ip);
 
 #if defined(D_ALIAS_IS_HLIST)
 # if defined(HLIST_ITERATOR_NO_NODE)
@@ -903,17 +899,10 @@ canonical_dentry(struct inode *ip)
 
     vcp->target_link = ret;
 
-# ifdef HAVE_DCACHE_LOCK
     if (ret) {
-	dget_locked(ret);
+	afs_linux_dget(ret);
     }
-    spin_unlock(&dcache_lock);
-# else
-    if (ret) {
-	dget(ret);
-    }
-    spin_unlock(&ip->i_lock);
-# endif
+    afs_d_alias_unlock(ip);
 
     return ret;
 }
@@ -2033,7 +2022,7 @@ afs_linux_read_cache(struct file *cachefp, struct page *page,
         cachepage = find_get_page(cachemapping, pageindex);
 	if (!cachepage) {
 	    if (!newpage)
-		newpage = page_cache_alloc_cold(cachemapping);
+		newpage = page_cache_alloc(cachemapping);
 	    if (!newpage) {
 		code = -ENOMEM;
 		goto out;
@@ -2191,7 +2180,11 @@ afs_linux_readpage_fastpath(struct file *fp, struct page *pp, int *codep)
 	AFS_GLOCK();
 	goto out;
     }
+#if defined(PAGEVEC_INIT_COLD_ARG)
     pagevec_init(&lrupv, 0);
+#else
+    pagevec_init(&lrupv);
+#endif
 
     code = afs_linux_read_cache(cacheFp, pp, tdc->f.chunk, &lrupv, NULL);
 
@@ -2351,7 +2344,11 @@ afs_linux_bypass_readpages(struct file *fp, struct address_space *mapping,
     ancr->offset = auio->uio_offset;
     ancr->length = auio->uio_resid;
 
+#if defined(PAGEVEC_INIT_COLD_ARG)
     pagevec_init(&lrupv, 0);
+#else
+    pagevec_init(&lrupv);
+#endif
 
     for(page_ix = 0; page_ix < num_pages; ++page_ix) {
 
@@ -2571,7 +2568,11 @@ afs_linux_readpages(struct file *fp, struct address_space *mapping,
     task = afs_pagecopy_init_task();
 
     tdc = NULL;
+#if defined(PAGEVEC_INIT_COLD_ARG)
     pagevec_init(&lrupv, 0);
+#else
+    pagevec_init(&lrupv);
+#endif
     for (page_idx = 0; page_idx < num_pages; page_idx++) {
 	struct page *page = list_entry(page_list->prev, struct page, lru);
 	list_del(&page->lru);

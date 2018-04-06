@@ -629,6 +629,14 @@ else
 			AFS_SYSNAME="x86_darwin_160"
 			OSXSDK="macosx10.12"
 			;;
+		x86_64-apple-darwin17.*)
+			AFS_SYSNAME="x86_darwin_170"
+			OSXSDK="macosx10.13"
+			;;
+		i?86-apple-darwin17.*)
+			AFS_SYSNAME="x86_darwin_170"
+			OSXSDK="macosx10.13"
+			;;
 		sparc-sun-solaris2.5*)
 			AFS_SYSNAME="sun4x_55"
 			enable_login="yes"
@@ -939,9 +947,12 @@ case $AFS_SYSNAME in *_linux* | *_umlinux*)
 
 		 dnl Function existence checks
 
-		 AC_CHECK_LINUX_FUNC([__vfs_read],
+		 AC_CHECK_LINUX_FUNC([__vfs_write],
 				     [#include <linux/fs.h>],
-				     [__vfs_read(NULL, NULL, 0, NULL);])
+				     [__vfs_write(NULL, NULL, 0, NULL);])
+		 AC_CHECK_LINUX_FUNC([kernel_write],
+				     [#include <linux/fs.h>],
+				     [kernel_write(NULL, NULL, 0, NULL);])
                  AC_CHECK_LINUX_FUNC([bdi_init],
 				     [#include <linux/backing-dev.h>],
 				     [bdi_init(NULL);])
@@ -1100,6 +1111,7 @@ case $AFS_SYSNAME in *_linux* | *_umlinux*)
 	  	 LINUX_AOP_WRITEBACK_CONTROL
 		 LINUX_FS_STRUCT_FOP_HAS_SPLICE
 		 LINUX_KERNEL_POSIX_LOCK_FILE_WAIT_ARG
+		 LINUX_KERNEL_PAGEVEC_INIT_COLD_ARG
 		 LINUX_POSIX_TEST_LOCK_RETURNS_CONFLICT
 		 LINUX_POSIX_TEST_LOCK_CONFLICT_ARG
 		 LINUX_KERNEL_SOCK_CREATE
@@ -1131,6 +1143,7 @@ case $AFS_SYSNAME in *_linux* | *_umlinux*)
 		 LINUX_DOP_D_REVALIDATE_TAKES_UNSIGNED
 		 LINUX_IOP_LOOKUP_TAKES_UNSIGNED
 		 LINUX_D_INVALIDATE_IS_VOID
+		 LINUX_KERNEL_READ_OFFSET_IS_LAST
 
 		 dnl If we are guaranteed that keyrings will work - that is
 		 dnl  a) The kernel has keyrings enabled
