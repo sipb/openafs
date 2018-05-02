@@ -115,7 +115,7 @@ extern struct rx_connection *rxi_FindConnection(osi_socket socket,
 						int *unknownService);
 extern struct rx_packet *rxi_ReceivePacket(struct rx_packet *np,
 					   osi_socket socket, afs_uint32 host,
-					   u_short port, int *tnop,
+					   u_short port, afs_uint32 laddr, int *tnop,
 					   struct rx_call **newcallp);
 extern int rxi_IsConnInteresting(struct rx_connection *aconn);
 extern struct rx_packet *rxi_ReceiveDataPacket(struct rx_call *call,
@@ -436,7 +436,7 @@ extern void afs_cv_timedwait(afs_kcondvar_t * cv, afs_kmutex_t * l,
 
 /* ARCH/rx_knet.c */
 # if !defined(AFS_SGI_ENV)
-extern int osi_NetSend(osi_socket asocket, struct sockaddr_in *addr,
+extern int osi_NetSend(osi_socket asocket, struct sockaddr_in *addr, afs_uint32 laddr,
 		       struct iovec *dvec, int nvecs, afs_int32 asize,
 		       int istack);
 # endif
@@ -544,29 +544,30 @@ extern int rxi_FreePackets(int num_pkts, struct rx_queue *q);
 extern struct rx_packet *rxi_AllocSendPacket(struct rx_call *call,
 					     int want);
 extern int rxi_ReadPacket(osi_socket socket, struct rx_packet *p,
-			  afs_uint32 * host, u_short * port);
+			  afs_uint32 * host, u_short * port, afs_uint32 * laddr);
 extern struct rx_packet *rxi_SplitJumboPacket(struct rx_packet *p,
 					      afs_uint32 host, short port,
 					      int first);
 #ifndef KERNEL
-extern int osi_NetSend(osi_socket socket, void *addr, struct iovec *dvec,
+extern int osi_NetSend(osi_socket socket, void *addr, afs_uint32 laddr, struct iovec *dvec,
 		       int nvecs, int length, int istack);
 #endif
 extern struct rx_packet *rxi_ReceiveDebugPacket(struct rx_packet *ap,
 						osi_socket asocket,
 						afs_uint32 ahost, short aport,
-						int istack);
+						afs_uint32 laddr, int istack);
 extern struct rx_packet *rxi_ReceiveVersionPacket(struct rx_packet
 						  *ap, osi_socket asocket,
 						  afs_uint32 ahost,
-						  short aport, int istack);
+						  short aport, afs_uint32 laddr,
+						  int istack);
 extern void rxi_SendPacket(struct rx_call *call, struct rx_connection *conn,
 			   struct rx_packet *p, int istack);
 extern void rxi_SendPacketList(struct rx_call *call,
 			       struct rx_connection *conn,
 			       struct rx_packet **list, int len, int istack);
 extern void rxi_SendRawAbort(osi_socket socket, afs_uint32 host, u_short port,
-			     afs_int32 error, struct rx_packet *source,
+			     afs_uint32 laddr, afs_int32 error, struct rx_packet *source,
 			     int istack);
 extern struct rx_packet *rxi_SendSpecial(struct rx_call *call,
 					 struct rx_connection *conn,

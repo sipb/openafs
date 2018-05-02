@@ -3110,7 +3110,7 @@ int (*rx_almostSent) (struct rx_packet *, struct sockaddr_in *) = 0;
 
 struct rx_packet *
 rxi_ReceivePacket(struct rx_packet *np, osi_socket socket,
-		  afs_uint32 host, u_short port, int *tnop,
+		  afs_uint32 host, u_short port, afs_uint32 laddr, int *tnop,
 		  struct rx_call **newcallp)
 {
     struct rx_call *call;
@@ -3139,11 +3139,11 @@ rxi_ReceivePacket(struct rx_packet *np, osi_socket socket,
 #endif
 
     if (np->header.type == RX_PACKET_TYPE_VERSION) {
-	return rxi_ReceiveVersionPacket(np, socket, host, port, 1);
+	return rxi_ReceiveVersionPacket(np, socket, host, port, laddr, 1);
     }
 
     if (np->header.type == RX_PACKET_TYPE_DEBUG) {
-	return rxi_ReceiveDebugPacket(np, socket, host, port, 1);
+	return rxi_ReceiveDebugPacket(np, socket, host, port, laddr, 1);
     }
 #ifdef RXDEBUG
     /* If an input tracer function is defined, call it with the packet and
@@ -3182,10 +3182,12 @@ rxi_ReceivePacket(struct rx_packet *np, osi_socket socket,
        don't abort an abort. */
     if (!conn) {
         if (unknownService && (np->header.type != RX_PACKET_TYPE_ABORT))
-            rxi_SendRawAbort(socket, host, port, RX_INVALID_OPERATION,
+            rxi_SendRawAbort(socket, host, port, laddr, RX_INVALID_OPERATION,
                              np, 0);
         return np;
     }
+
+    conn->laddr = laddr;
 
     /* If the connection is in an error state, send an abort packet and ignore
      * the incoming packet */
@@ -6514,7 +6516,7 @@ rxi_NatKeepAliveEvent(struct rxevent *event, void *arg1, void *dummy)
     tmpiov[0].iov_base = tbuffer;
     tmpiov[0].iov_len = 1 + sizeof(struct rx_header);
 
-    osi_NetSend(socket, &taddr, tmpiov, 1, 1 + sizeof(struct rx_header), 1);
+    osi_NetSend(socket, &taddr, conn->laddr, tmpiov, 1, 1 + sizeof(struct rx_header), 1);
 
     MUTEX_ENTER(&conn->conn_data_lock);
     MUTEX_ENTER(&rx_refcnt_mutex);

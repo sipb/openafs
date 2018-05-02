@@ -156,7 +156,7 @@ out:
  * non-zero = failure
  */
 int
-osi_NetSend(osi_socket sop, struct sockaddr_in *to, struct iovec *iovec,
+osi_NetSend(osi_socket sop, struct sockaddr_in *to, afs_uint32 laddr, struct iovec *iovec,
 	    int iovcnt, afs_int32 size, int istack)
 {
     struct msghdr msg;

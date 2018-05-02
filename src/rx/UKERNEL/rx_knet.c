@@ -65,6 +65,7 @@ rxi_ListenerProc(osi_socket usockp, int *tnop, struct rx_call **newcallp)
     struct rx_packet *tp;
     afs_uint32 host;
     u_short port;
+    afs_uint32 laddr;
     int rc;
 
     /*
@@ -78,9 +79,9 @@ rxi_ListenerProc(osi_socket usockp, int *tnop, struct rx_call **newcallp)
 
 	tp = rxi_AllocPacket(RX_PACKET_CLASS_RECEIVE);
 	usr_assert(tp != NULL);
-	rc = rxi_ReadPacket(usockp, tp, &host, &port);
+	rc = rxi_ReadPacket(usockp, tp, &host, &port, &laddr);
 	if (rc != 0) {
-	    tp = rxi_ReceivePacket(tp, usockp, host, port, tnop, newcallp);
+	    tp = rxi_ReceivePacket(tp, usockp, host, port, laddr, tnop, newcallp);
 	    if (newcallp && *newcallp) {
 		if (tp) {
 		    rxi_FreePacket(tp);
@@ -287,7 +288,7 @@ osi_StopListener(void)
 }
 
 int
-osi_NetSend(osi_socket sockp, struct sockaddr_in *addr, struct iovec *iov,
+osi_NetSend(osi_socket sockp, struct sockaddr_in *addr, afs_uint32 laddr, struct iovec *iov,
 	    int nio, afs_int32 size, int stack)
 {
     int rc;

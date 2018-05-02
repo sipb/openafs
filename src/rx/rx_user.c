@@ -110,6 +110,7 @@ rxi_GetHostUDPSocket(u_int ahost, u_short port)
     int pmtu=IP_PMTUDISC_DONT;
 #endif
 #endif
+    int on = 1;
 
 #if !defined(AFS_NT40_ENV)
     if (ntohs(port) >= IPPORT_RESERVED && ntohs(port) < IPPORT_USERRESERVED) {
@@ -214,6 +215,7 @@ rxi_GetHostUDPSocket(u_int ahost, u_short port)
     setsockopt(socketFd, SOL_IP, IP_RECVERR, &recverr, sizeof(recverr));
 #endif
 #endif
+    setsockopt(socketFd, SOL_IP, IP_PKTINFO, &on, sizeof(on));
     if (rxi_Listen(socketFd) < 0) {
 	goto error;
     }

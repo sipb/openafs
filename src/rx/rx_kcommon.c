@@ -336,7 +336,7 @@ MyArrivalProc(struct rx_packet *ahandle,
     rxi_DecodePacketHeader(ahandle);
     ahandle =
 	rxi_ReceivePacket(ahandle, arock,
-			  afrom->sin_addr.s_addr, afrom->sin_port, NULL,
+			  afrom->sin_addr.s_addr, afrom->sin_port, 0, NULL,
 			  NULL);
 
     /* free the packet if it has been returned */
@@ -1238,7 +1238,7 @@ rxk_Listener(void)
 		osi_Panic("rxk_Listener: No more Rx buffers!\n");
 	}
 	if (!(code = rxk_ReadPacket(rx_socket, rxp, &host, &port))) {
-	    rxp = rxi_ReceivePacket(rxp, rx_socket, host, port, 0, 0);
+	    rxp = rxi_ReceivePacket(rxp, rx_socket, host, port, 0, 0, 0);
 	}
     }
 

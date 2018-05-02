@@ -230,6 +230,7 @@ struct rx_connection_rx_lock {
 struct rx_connection {
     struct rx_connection *next;	/*  on hash chain _or_ free list */
     struct rx_peer *peer;
+    afs_uint32 laddr;		/* Local IP address, in net byte order */
 #endif
 #ifdef	RX_ENABLE_LOCKS
     afs_kmutex_t conn_call_lock;	/* locks conn_call_cv */
