@@ -1,0 +1,580 @@
+diff --git a/src/afs/afs_mariner.c b/src/afs/afs_mariner.c
+index 9283b9a64d1..799bcb89a06 100644
+--- a/src/afs/afs_mariner.c
++++ b/src/afs/afs_mariner.c
+@@ -104,7 +104,7 @@ afs_MarinerLog(char *astring, struct vcache *avc)
+     dvec.iov_base = buf;
+     dvec.iov_len = tp - buf;
+     AFS_GUNLOCK();
+-    (void)osi_NetSend(afs_server->socket, &taddr, &dvec, 1, tp - buf, 0);
++    (void)osi_NetSend(afs_server->socket, &taddr, 0, &dvec, 1, tp - buf, 0);
+     AFS_GLOCK();
+     osi_FreeSmallSpace(buf);
+ }				/*afs_MarinerLog */
+diff --git a/src/rx/LINUX/rx_knet.c b/src/rx/LINUX/rx_knet.c
+index 29e73a1422f..aef6d37f588 100644
+--- a/src/rx/LINUX/rx_knet.c
++++ b/src/rx/LINUX/rx_knet.c
+@@ -156,7 +156,7 @@ out:
+  * non-zero = failure
+  */
+ int
+-osi_NetSend(osi_socket sop, struct sockaddr_in *to, struct iovec *iovec,
++osi_NetSend(osi_socket sop, struct sockaddr_in *to, afs_uint32 laddr, struct iovec *iovec,
+ 	    int iovcnt, afs_int32 size, int istack)
+ {
+     struct msghdr msg;
+diff --git a/src/rx/UKERNEL/rx_knet.c b/src/rx/UKERNEL/rx_knet.c
+index 34e4e2ba197..05fbaf0a8a1 100644
+--- a/src/rx/UKERNEL/rx_knet.c
++++ b/src/rx/UKERNEL/rx_knet.c
+@@ -65,6 +65,7 @@ rxi_ListenerProc(osi_socket usockp, int *tnop, struct rx_call **newcallp)
+     struct rx_packet *tp;
+     afs_uint32 host;
+     u_short port;
++    afs_uint32 laddr;
+     int rc;
+ 
+     /*
+@@ -78,9 +79,9 @@ rxi_ListenerProc(osi_socket usockp, int *tnop, struct rx_call **newcallp)
+ 
+ 	tp = rxi_AllocPacket(RX_PACKET_CLASS_RECEIVE);
+ 	usr_assert(tp != NULL);
+-	rc = rxi_ReadPacket(usockp, tp, &host, &port);
++	rc = rxi_ReadPacket(usockp, tp, &host, &port, &laddr);
+ 	if (rc != 0) {
+-	    tp = rxi_ReceivePacket(tp, usockp, host, port, tnop, newcallp);
++	    tp = rxi_ReceivePacket(tp, usockp, host, port, laddr, tnop, newcallp);
+ 	    if (newcallp && *newcallp) {
+ 		if (tp) {
+ 		    rxi_FreePacket(tp);
+@@ -287,7 +288,7 @@ osi_StopListener(void)
+ }
+ 
+ int
+-osi_NetSend(osi_socket sockp, struct sockaddr_in *addr, struct iovec *iov,
++osi_NetSend(osi_socket sockp, struct sockaddr_in *addr, afs_uint32 laddr, struct iovec *iov,
+ 	    int nio, afs_int32 size, int stack)
+ {
+     int rc;
+diff --git a/src/rx/rx.c b/src/rx/rx.c
+index ae95789e4c1..d4aea3cfa92 100644
+--- a/src/rx/rx.c
++++ b/src/rx/rx.c
+@@ -3110,7 +3110,7 @@ int (*rx_almostSent) (struct rx_packet *, struct sockaddr_in *) = 0;
+ 
+ struct rx_packet *
+ rxi_ReceivePacket(struct rx_packet *np, osi_socket socket,
+-		  afs_uint32 host, u_short port, int *tnop,
++		  afs_uint32 host, u_short port, afs_uint32 laddr, int *tnop,
+ 		  struct rx_call **newcallp)
+ {
+     struct rx_call *call;
+@@ -3139,11 +3139,11 @@ rxi_ReceivePacket(struct rx_packet *np, osi_socket socket,
+ #endif
+ 
+     if (np->header.type == RX_PACKET_TYPE_VERSION) {
+-	return rxi_ReceiveVersionPacket(np, socket, host, port, 1);
++	return rxi_ReceiveVersionPacket(np, socket, host, port, laddr, 1);
+     }
+ 
+     if (np->header.type == RX_PACKET_TYPE_DEBUG) {
+-	return rxi_ReceiveDebugPacket(np, socket, host, port, 1);
++	return rxi_ReceiveDebugPacket(np, socket, host, port, laddr, 1);
+     }
+ #ifdef RXDEBUG
+     /* If an input tracer function is defined, call it with the packet and
+@@ -3182,11 +3182,15 @@ rxi_ReceivePacket(struct rx_packet *np, osi_socket socket,
+        don't abort an abort. */
+     if (!conn) {
+         if (unknownService && (np->header.type != RX_PACKET_TYPE_ABORT))
+-            rxi_SendRawAbort(socket, host, port, RX_INVALID_OPERATION,
++            rxi_SendRawAbort(socket, host, port, laddr, RX_INVALID_OPERATION,
+                              np, 0);
+         return np;
+     }
+ 
++    MUTEX_ENTER(&conn->conn_data_lock);
++    conn->laddr = laddr;
++    MUTEX_EXIT(&conn->conn_data_lock);
++
+     /* If the connection is in an error state, send an abort packet and ignore
+      * the incoming packet */
+     if (conn->error) {
+@@ -6484,6 +6488,7 @@ rxi_NatKeepAliveEvent(struct rxevent *event, void *arg1, void *dummy)
+     struct rx_header theader;
+     char tbuffer[1 + sizeof(struct rx_header)];
+     struct sockaddr_in taddr;
++    afs_uint32 laddr;
+     char *tp;
+     char a[1] = { 0 };
+     struct iovec tmpiov[2];
+@@ -6514,7 +6519,11 @@ rxi_NatKeepAliveEvent(struct rxevent *event, void *arg1, void *dummy)
+     tmpiov[0].iov_base = tbuffer;
+     tmpiov[0].iov_len = 1 + sizeof(struct rx_header);
+ 
+-    osi_NetSend(socket, &taddr, tmpiov, 1, 1 + sizeof(struct rx_header), 1);
++    MUTEX_ENTER(&conn->conn_data_lock);
++    laddr = conn->laddr;
++    MUTEX_EXIT(&conn->conn_data_lock);
++
++    osi_NetSend(socket, &taddr, laddr, tmpiov, 1, 1 + sizeof(struct rx_header), 1);
+ 
+     MUTEX_ENTER(&conn->conn_data_lock);
+     MUTEX_ENTER(&rx_refcnt_mutex);
+diff --git a/src/rx/rx.h b/src/rx/rx.h
+index dbee52ff54f..727be295879 100644
+--- a/src/rx/rx.h
++++ b/src/rx/rx.h
+@@ -230,6 +230,7 @@ struct rx_connection_rx_lock {
+ struct rx_connection {
+     struct rx_connection *next;	/*  on hash chain _or_ free list */
+     struct rx_peer *peer;
++    afs_uint32 laddr;		/* Local IP address, in net byte order */
+ #endif
+ #ifdef	RX_ENABLE_LOCKS
+     afs_kmutex_t conn_call_lock;	/* locks conn_call_cv */
+diff --git a/src/rx/rx_kcommon.c b/src/rx/rx_kcommon.c
+index 796b53a7566..f1282b58210 100644
+--- a/src/rx/rx_kcommon.c
++++ b/src/rx/rx_kcommon.c
+@@ -336,7 +336,7 @@ MyArrivalProc(struct rx_packet *ahandle,
+     rxi_DecodePacketHeader(ahandle);
+     ahandle =
+ 	rxi_ReceivePacket(ahandle, arock,
+-			  afrom->sin_addr.s_addr, afrom->sin_port, NULL,
++			  afrom->sin_addr.s_addr, afrom->sin_port, 0, NULL,
+ 			  NULL);
+ 
+     /* free the packet if it has been returned */
+@@ -1238,7 +1238,7 @@ rxk_Listener(void)
+ 		osi_Panic("rxk_Listener: No more Rx buffers!\n");
+ 	}
+ 	if (!(code = rxk_ReadPacket(rx_socket, rxp, &host, &port))) {
+-	    rxp = rxi_ReceivePacket(rxp, rx_socket, host, port, 0, 0);
++	    rxp = rxi_ReceivePacket(rxp, rx_socket, host, port, 0, 0, 0);
+ 	}
+     }
+ 
+diff --git a/src/rx/rx_lwp.c b/src/rx/rx_lwp.c
+index 929c90fe901..ec9bb37fb3a 100644
+--- a/src/rx/rx_lwp.c
++++ b/src/rx/rx_lwp.c
+@@ -160,6 +160,7 @@ rxi_ListenerProc(fd_set * rfds, int *tnop, struct rx_call **newcallp)
+ {
+     afs_uint32 host;
+     u_short port;
++    afs_uint32 laddr;
+     struct rx_packet *p = (struct rx_packet *)0;
+     osi_socket socket;
+     struct clock cv;
+@@ -271,9 +272,9 @@ rxi_ListenerProc(fd_set * rfds, int *tnop, struct rx_call **newcallp)
+ #ifdef AFS_NT40_ENV
+ 	    for (i = 0; p && i < rfds->fd_count; i++) {
+ 		socket = rfds->fd_array[i];
+-		if (rxi_ReadPacket(socket, p, &host, &port)) {
++		if (rxi_ReadPacket(socket, p, &host, &port, &laddr)) {
+ 		    *newcallp = NULL;
+-		    p = rxi_ReceivePacket(p, socket, host, port, tnop,
++		    p = rxi_ReceivePacket(p, socket, host, port, laddr, tnop,
+ 					  newcallp);
+ 		    if (newcallp && *newcallp) {
+ 			if (p) {
+@@ -292,8 +293,8 @@ rxi_ListenerProc(fd_set * rfds, int *tnop, struct rx_call **newcallp)
+ 		 p && socket <= rx_maxSocketNumber; socket++) {
+ 		if (!FD_ISSET(socket, rfds))
+ 		    continue;
+-		if (rxi_ReadPacket(socket, p, &host, &port)) {
+-		    p = rxi_ReceivePacket(p, socket, host, port, tnop,
++		if (rxi_ReadPacket(socket, p, &host, &port, &laddr)) {
++		    p = rxi_ReceivePacket(p, socket, host, port, laddr, tnop,
+ 					  newcallp);
+ 		    if (newcallp && *newcallp) {
+ 			if (p) {
+diff --git a/src/rx/rx_packet.c b/src/rx/rx_packet.c
+index 44761cc0835..f9463cff0c1 100644
+--- a/src/rx/rx_packet.c
++++ b/src/rx/rx_packet.c
+@@ -108,7 +108,7 @@ extern char cml_version_number[];
+ static int AllocPacketBufs(int class, int num_pkts, struct rx_queue *q);
+ 
+ static void rxi_SendDebugPacket(struct rx_packet *apacket, osi_socket asocket,
+-				afs_uint32 ahost, short aport,
++				afs_uint32 ahost, short aport, afs_uint32 laddr,
+ 				afs_int32 istack);
+ 
+ #ifdef RX_ENABLE_TSFPQ
+@@ -1471,13 +1471,20 @@ CountFDs(int amax)
+  * The header is decoded. */
+ int
+ rxi_ReadPacket(osi_socket socket, struct rx_packet *p, afs_uint32 * host,
+-	       u_short * port)
++	       u_short * port, afs_uint32 * laddr)
+ {
+     struct sockaddr_in from;
+     int nbytes;
+     afs_int32 rlen;
+     afs_uint32 tlen, savelen;
+     struct msghdr msg;
++    struct cmsghdr *cmsg;
++    union {
++       char buf[CMSG_SPACE(sizeof(struct in_pktinfo))];
++       struct cmsghdr align;
++    } u;
++    struct in_pktinfo *pktinfo;
++    afs_uint32 the_laddr;
+     rx_computelen(p, tlen);
+     rx_SetDataSize(p, tlen);	/* this is the size of the user data area */
+ 
+@@ -1503,12 +1510,23 @@ rxi_ReadPacket(osi_socket socket, struct rx_packet *p, afs_uint32 * host,
+     p->wirevec[p->niovecs - 1].iov_len += RX_EXTRABUFFERSIZE;
+ 
+     memset(&msg, 0, sizeof(msg));
++    memset(&u, 0, sizeof(u));
+     msg.msg_name = (char *)&from;
+     msg.msg_namelen = sizeof(struct sockaddr_in);
+     msg.msg_iov = p->wirevec;
+     msg.msg_iovlen = p->niovecs;
++    msg.msg_control = u.buf;
++    msg.msg_controllen = sizeof(u.buf);
+     nbytes = rxi_Recvmsg(socket, &msg, 0);
+ 
++    the_laddr = 0;
++    for (cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
++	if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO) {
++	    pktinfo = (struct in_pktinfo *)CMSG_DATA(cmsg);
++	    the_laddr = pktinfo->ipi_addr.s_addr;
++	}
++    }
++
+     /* restore the vec to its correct state */
+     p->wirevec[p->niovecs - 1].iov_len = savelen;
+ 
+@@ -1536,6 +1554,7 @@ rxi_ReadPacket(osi_socket socket, struct rx_packet *p, afs_uint32 * host,
+ 
+ 	*host = from.sin_addr.s_addr;
+ 	*port = from.sin_port;
++	*laddr = the_laddr;
+ 
+ 	dpf(("Dropped %d %s: %x.%u.%u.%u.%u.%u.%u flags %d len %d",
+ 	      p->header.serial, rx_packetTypes[p->header.type - 1], ntohl(*host), ntohs(*port), p->header.serial,
+@@ -1553,6 +1572,7 @@ rxi_ReadPacket(osi_socket socket, struct rx_packet *p, afs_uint32 * host,
+ 
+ 	*host = from.sin_addr.s_addr;
+ 	*port = from.sin_port;
++	*laddr = the_laddr;
+ 	if (p->header.type > 0 && p->header.type < RX_N_PACKET_TYPES) {
+             if (rx_stats_active) {
+                 struct rx_peer *peer;
+@@ -1663,17 +1683,32 @@ rxi_SplitJumboPacket(struct rx_packet *p, afs_uint32 host, short port,
+ #ifndef KERNEL
+ /* Send a udp datagram */
+ int
+-osi_NetSend(osi_socket socket, void *addr, struct iovec *dvec, int nvecs,
++osi_NetSend(osi_socket socket, void *addr, afs_uint32 laddr, struct iovec *dvec, int nvecs,
+ 	    int length, int istack)
+ {
+     struct msghdr msg;
++    struct cmsghdr *cmsg;
++    union {
++	char buf[CMSG_SPACE(sizeof(struct in_pktinfo))];
++	struct cmsghdr align;
++    } u;
++    struct in_pktinfo *pktinfo;
+ 	int ret;
+ 
+     memset(&msg, 0, sizeof(msg));
++    memset(&u, 0, sizeof(u));
+     msg.msg_iov = dvec;
+     msg.msg_iovlen = nvecs;
+     msg.msg_name = addr;
+     msg.msg_namelen = sizeof(struct sockaddr_in);
++    msg.msg_control = u.buf;
++    msg.msg_controllen = sizeof(u.buf);
++    cmsg = CMSG_FIRSTHDR(&msg);
++    cmsg->cmsg_level = IPPROTO_IP;
++    cmsg->cmsg_type = IP_PKTINFO;
++    cmsg->cmsg_len = CMSG_LEN(sizeof(struct in_pktinfo));
++    pktinfo = (struct in_pktinfo *)CMSG_DATA(cmsg);
++    pktinfo->ipi_spec_dst.s_addr = laddr;
+ 
+     ret = rxi_Sendmsg(socket, &msg, 0);
+ 
+@@ -1831,7 +1866,7 @@ rx_mb_to_packet(amb, free, hdr_len, data_len, phandle)
+ 
+ struct rx_packet *
+ rxi_ReceiveDebugPacket(struct rx_packet *ap, osi_socket asocket,
+-		       afs_uint32 ahost, short aport, int istack)
++		       afs_uint32 ahost, short aport, afs_uint32 laddr, int istack)
+ {
+     struct rx_debugIn tin;
+     afs_int32 tl;
+@@ -1885,7 +1920,7 @@ rxi_ReceiveDebugPacket(struct rx_packet *ap, osi_socket asocket,
+ 		rx_packetwrite(ap, 0, sizeof(struct rx_debugStats),
+ 			       (char *)&tstat);
+ 		ap->length = sizeof(struct rx_debugStats);
+-		rxi_SendDebugPacket(ap, asocket, ahost, aport, istack);
++		rxi_SendDebugPacket(ap, asocket, ahost, aport, laddr, istack);
+ 		rx_computelen(ap, ap->length);
+ 	    }
+ 	    break;
+@@ -1978,7 +2013,7 @@ rxi_ReceiveDebugPacket(struct rx_packet *ap, osi_socket asocket,
+ 				       (char *)&tconn);
+ 			tl = ap->length;
+ 			ap->length = sizeof(struct rx_debugConn);
+-			rxi_SendDebugPacket(ap, asocket, ahost, aport,
++			rxi_SendDebugPacket(ap, asocket, ahost, aport, laddr,
+ 					    istack);
+ 			ap->length = tl;
+ 			return ap;
+@@ -1992,7 +2027,7 @@ rxi_ReceiveDebugPacket(struct rx_packet *ap, osi_socket asocket,
+ 			   (char *)&tconn);
+ 	    tl = ap->length;
+ 	    ap->length = sizeof(struct rx_debugConn);
+-	    rxi_SendDebugPacket(ap, asocket, ahost, aport, istack);
++	    rxi_SendDebugPacket(ap, asocket, ahost, aport, laddr, istack);
+ 	    ap->length = tl;
+ 	    break;
+ 	}
+@@ -2078,7 +2113,7 @@ rxi_ReceiveDebugPacket(struct rx_packet *ap, osi_socket asocket,
+ 				       (char *)&tpeer);
+ 			tl = ap->length;
+ 			ap->length = sizeof(struct rx_debugPeer);
+-			rxi_SendDebugPacket(ap, asocket, ahost, aport,
++			rxi_SendDebugPacket(ap, asocket, ahost, aport, laddr,
+ 					    istack);
+ 			ap->length = tl;
+ 			return ap;
+@@ -2092,7 +2127,7 @@ rxi_ReceiveDebugPacket(struct rx_packet *ap, osi_socket asocket,
+ 			   (char *)&tpeer);
+ 	    tl = ap->length;
+ 	    ap->length = sizeof(struct rx_debugPeer);
+-	    rxi_SendDebugPacket(ap, asocket, ahost, aport, istack);
++	    rxi_SendDebugPacket(ap, asocket, ahost, aport, laddr, istack);
+ 	    ap->length = tl;
+ 	    break;
+ 	}
+@@ -2118,7 +2153,7 @@ rxi_ReceiveDebugPacket(struct rx_packet *ap, osi_socket asocket,
+ 	    ap->length = sizeof(rx_stats);
+ 	    if (rx_stats_active)
+ 		MUTEX_EXIT(&rx_stats_mutex);
+-	    rxi_SendDebugPacket(ap, asocket, ahost, aport, istack);
++	    rxi_SendDebugPacket(ap, asocket, ahost, aport, laddr, istack);
+ 	    ap->length = tl;
+ 	    break;
+ 	}
+@@ -2130,7 +2165,7 @@ rxi_ReceiveDebugPacket(struct rx_packet *ap, osi_socket asocket,
+ 	rx_packetwrite(ap, 0, sizeof(struct rx_debugIn), (char *)&tin);
+ 	tl = ap->length;
+ 	ap->length = sizeof(struct rx_debugIn);
+-	rxi_SendDebugPacket(ap, asocket, ahost, aport, istack);
++	rxi_SendDebugPacket(ap, asocket, ahost, aport, laddr, istack);
+ 	ap->length = tl;
+ 	break;
+     }
+@@ -2139,7 +2174,7 @@ rxi_ReceiveDebugPacket(struct rx_packet *ap, osi_socket asocket,
+ 
+ struct rx_packet *
+ rxi_ReceiveVersionPacket(struct rx_packet *ap, osi_socket asocket,
+-			 afs_uint32 ahost, short aport, int istack)
++			 afs_uint32 ahost, short aport, afs_uint32 laddr, int istack)
+ {
+     afs_int32 tl;
+ 
+@@ -2157,7 +2192,7 @@ rxi_ReceiveVersionPacket(struct rx_packet *ap, osi_socket asocket,
+ 	rx_packetwrite(ap, 0, 65, buf);
+ 	tl = ap->length;
+ 	ap->length = 65;
+-	rxi_SendDebugPacket(ap, asocket, ahost, aport, istack);
++	rxi_SendDebugPacket(ap, asocket, ahost, aport, laddr, istack);
+ 	ap->length = tl;
+     }
+ 
+@@ -2168,7 +2203,7 @@ rxi_ReceiveVersionPacket(struct rx_packet *ap, osi_socket asocket,
+ /* send a debug packet back to the sender */
+ static void
+ rxi_SendDebugPacket(struct rx_packet *apacket, osi_socket asocket,
+-		    afs_uint32 ahost, short aport, afs_int32 istack)
++		    afs_uint32 ahost, short aport, afs_uint32 laddr, afs_int32 istack)
+ {
+     struct sockaddr_in taddr;
+     unsigned int i, nbytes, savelen = 0;
+@@ -2210,7 +2245,7 @@ rxi_SendDebugPacket(struct rx_packet *apacket, osi_socket asocket,
+ #endif
+ #endif
+     /* debug packets are not reliably delivered, hence the cast below. */
+-    (void)osi_NetSend(asocket, &taddr, apacket->wirevec, apacket->niovecs,
++    (void)osi_NetSend(asocket, &taddr, laddr, apacket->wirevec, apacket->niovecs,
+ 		      apacket->length + RX_HEADER_SIZE, istack);
+ #ifdef KERNEL
+ #ifdef RX_KERNEL_TRACE
+@@ -2246,6 +2281,7 @@ rxi_SendPacket(struct rx_call *call, struct rx_connection *conn,
+     int code;
+     struct sockaddr_in addr;
+     struct rx_peer *peer = conn->peer;
++    afs_uint32 laddr;
+     osi_socket socket;
+ #ifdef RXDEBUG
+     char deliveryType = 'S';
+@@ -2279,6 +2315,7 @@ rxi_SendPacket(struct rx_call *call, struct rx_connection *conn,
+ 	    conn->lastPacketSizeSeq = p->header.seq;
+ 	}
+     }
++    laddr = conn->laddr;
+     MUTEX_EXIT(&conn->conn_data_lock);
+     /* This is so we can adjust retransmit time-outs better in the face of
+      * rapidly changing round-trip times.  RTO estimation is not a la Karn.
+@@ -2337,7 +2374,7 @@ rxi_SendPacket(struct rx_call *call, struct rx_connection *conn,
+ #endif
+ #endif
+ 	if ((code =
+-	     osi_NetSend(socket, &addr, p->wirevec, p->niovecs,
++	     osi_NetSend(socket, &addr, laddr, p->wirevec, p->niovecs,
+ 			 p->length + RX_HEADER_SIZE, istack)) != 0) {
+ 	    /* send failed, so let's hurry up the resend, eh? */
+             if (rx_stats_active)
+@@ -2403,6 +2440,7 @@ rxi_SendPacketList(struct rx_call *call, struct rx_connection *conn,
+ #endif
+     struct sockaddr_in addr;
+     struct rx_peer *peer = conn->peer;
++    afs_uint32 laddr;
+     osi_socket socket;
+     struct rx_packet *p = NULL;
+     struct iovec wirevec[RX_MAXIOVECS];
+@@ -2446,6 +2484,7 @@ rxi_SendPacketList(struct rx_call *call, struct rx_connection *conn,
+ 	    }
+ 	}
+     }
++    laddr = conn->laddr;
+     MUTEX_EXIT(&conn->conn_data_lock);
+ 
+ 
+@@ -2545,7 +2584,7 @@ rxi_SendPacketList(struct rx_call *call, struct rx_connection *conn,
+ 	    AFS_GUNLOCK();
+ #endif
+ 	if ((code =
+-	     osi_NetSend(socket, &addr, &wirevec[0], len + 1, length,
++	     osi_NetSend(socket, &addr, laddr, &wirevec[0], len + 1, length,
+ 			 istack)) != 0) {
+ 	    /* send failed, so let's hurry up the resend, eh? */
+             if (rx_stats_active)
+@@ -2597,7 +2636,7 @@ rxi_SendPacketList(struct rx_call *call, struct rx_connection *conn,
+ 
+ /* Send a raw abort packet, without any call or connection structures */
+ void
+-rxi_SendRawAbort(osi_socket socket, afs_uint32 host, u_short port,
++rxi_SendRawAbort(osi_socket socket, afs_uint32 host, u_short port, afs_uint32 laddr,
+ 		 afs_int32 error, struct rx_packet *source, int istack)
+ {
+     struct rx_header theader;
+@@ -2635,7 +2674,7 @@ rxi_SendRawAbort(osi_socket socket, afs_uint32 host, u_short port,
+     addr.sin_len = sizeof(struct sockaddr_in);
+ #endif
+ 
+-    osi_NetSend(socket, &addr, iov, 2,
++    osi_NetSend(socket, &addr, laddr, iov, 2,
+ 		sizeof(struct rx_header) + sizeof(error), istack);
+ }
+ 
+diff --git a/src/rx/rx_prototypes.h b/src/rx/rx_prototypes.h
+index 0a9a389a678..3c06ae80d81 100644
+--- a/src/rx/rx_prototypes.h
++++ b/src/rx/rx_prototypes.h
+@@ -115,7 +115,7 @@ extern struct rx_connection *rxi_FindConnection(osi_socket socket,
+ 						int *unknownService);
+ extern struct rx_packet *rxi_ReceivePacket(struct rx_packet *np,
+ 					   osi_socket socket, afs_uint32 host,
+-					   u_short port, int *tnop,
++					   u_short port, afs_uint32 laddr, int *tnop,
+ 					   struct rx_call **newcallp);
+ extern int rxi_IsConnInteresting(struct rx_connection *aconn);
+ extern struct rx_packet *rxi_ReceiveDataPacket(struct rx_call *call,
+@@ -436,7 +436,7 @@ extern void afs_cv_timedwait(afs_kcondvar_t * cv, afs_kmutex_t * l,
+ 
+ /* ARCH/rx_knet.c */
+ # if !defined(AFS_SGI_ENV)
+-extern int osi_NetSend(osi_socket asocket, struct sockaddr_in *addr,
++extern int osi_NetSend(osi_socket asocket, struct sockaddr_in *addr, afs_uint32 laddr,
+ 		       struct iovec *dvec, int nvecs, afs_int32 asize,
+ 		       int istack);
+ # endif
+@@ -544,29 +544,30 @@ extern int rxi_FreePackets(int num_pkts, struct rx_queue *q);
+ extern struct rx_packet *rxi_AllocSendPacket(struct rx_call *call,
+ 					     int want);
+ extern int rxi_ReadPacket(osi_socket socket, struct rx_packet *p,
+-			  afs_uint32 * host, u_short * port);
++			  afs_uint32 * host, u_short * port, afs_uint32 * laddr);
+ extern struct rx_packet *rxi_SplitJumboPacket(struct rx_packet *p,
+ 					      afs_uint32 host, short port,
+ 					      int first);
+ #ifndef KERNEL
+-extern int osi_NetSend(osi_socket socket, void *addr, struct iovec *dvec,
++extern int osi_NetSend(osi_socket socket, void *addr, afs_uint32 laddr, struct iovec *dvec,
+ 		       int nvecs, int length, int istack);
+ #endif
+ extern struct rx_packet *rxi_ReceiveDebugPacket(struct rx_packet *ap,
+ 						osi_socket asocket,
+ 						afs_uint32 ahost, short aport,
+-						int istack);
++						afs_uint32 laddr, int istack);
+ extern struct rx_packet *rxi_ReceiveVersionPacket(struct rx_packet
+ 						  *ap, osi_socket asocket,
+ 						  afs_uint32 ahost,
+-						  short aport, int istack);
++						  short aport, afs_uint32 laddr,
++						  int istack);
+ extern void rxi_SendPacket(struct rx_call *call, struct rx_connection *conn,
+ 			   struct rx_packet *p, int istack);
+ extern void rxi_SendPacketList(struct rx_call *call,
+ 			       struct rx_connection *conn,
+ 			       struct rx_packet **list, int len, int istack);
+ extern void rxi_SendRawAbort(osi_socket socket, afs_uint32 host, u_short port,
+-			     afs_int32 error, struct rx_packet *source,
++			     afs_uint32 laddr, afs_int32 error, struct rx_packet *source,
+ 			     int istack);
+ extern struct rx_packet *rxi_SendSpecial(struct rx_call *call,
+ 					 struct rx_connection *conn,
+diff --git a/src/rx/rx_pthread.c b/src/rx/rx_pthread.c
+index 0576d767e68..6710a1d4aa6 100644
+--- a/src/rx/rx_pthread.c
++++ b/src/rx/rx_pthread.c
+@@ -204,6 +204,7 @@ rxi_ListenerProc(osi_socket sock, int *tnop, struct rx_call **newcallp)
+ {
+     unsigned int host;
+     u_short port;
++    unsigned int laddr;
+     struct rx_packet *p = (struct rx_packet *)0;
+ 
+     MUTEX_ENTER(&listener_mutex);
+@@ -228,9 +229,9 @@ rxi_ListenerProc(osi_socket sock, int *tnop, struct rx_call **newcallp)
+ 	    }
+ 	}
+ 
+-	if (rxi_ReadPacket(sock, p, &host, &port)) {
++	if (rxi_ReadPacket(sock, p, &host, &port, &laddr)) {
+ 	    clock_NewTime();
+-	    p = rxi_ReceivePacket(p, sock, host, port, tnop, newcallp);
++	    p = rxi_ReceivePacket(p, sock, host, port, laddr, tnop, newcallp);
+ 	    if (newcallp && *newcallp) {
+ 		if (p)
+ 		    rxi_FreePacket(p);
+diff --git a/src/rx/rx_user.c b/src/rx/rx_user.c
+index 54937b484a0..a6090ad9400 100644
+--- a/src/rx/rx_user.c
++++ b/src/rx/rx_user.c
+@@ -110,6 +110,7 @@ rxi_GetHostUDPSocket(u_int ahost, u_short port)
+     int pmtu=IP_PMTUDISC_DONT;
+ #endif
+ #endif
++    int on = 1;
+ 
+ #if !defined(AFS_NT40_ENV)
+     if (ntohs(port) >= IPPORT_RESERVED && ntohs(port) < IPPORT_USERRESERVED) {
+@@ -214,6 +215,7 @@ rxi_GetHostUDPSocket(u_int ahost, u_short port)
+     setsockopt(socketFd, SOL_IP, IP_RECVERR, &recverr, sizeof(recverr));
+ #endif
+ #endif
++    setsockopt(socketFd, SOL_IP, IP_PKTINFO, &on, sizeof(on));
+     if (rxi_Listen(socketFd) < 0) {
+ 	goto error;
+     }
