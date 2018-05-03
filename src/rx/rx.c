@@ -3187,7 +3187,9 @@ rxi_ReceivePacket(struct rx_packet *np, osi_socket socket,
         return np;
     }
 
+    MUTEX_ENTER(&conn->conn_data_lock);
     conn->laddr = laddr;
+    MUTEX_EXIT(&conn->conn_data_lock);
 
     /* If the connection is in an error state, send an abort packet and ignore
      * the incoming packet */
@@ -6486,6 +6488,7 @@ rxi_NatKeepAliveEvent(struct rxevent *event, void *arg1, void *dummy)
     struct rx_header theader;
     char tbuffer[1 + sizeof(struct rx_header)];
     struct sockaddr_in taddr;
+    afs_uint32 laddr;
     char *tp;
     char a[1] = { 0 };
     struct iovec tmpiov[2];
@@ -6516,7 +6519,11 @@ rxi_NatKeepAliveEvent(struct rxevent *event, void *arg1, void *dummy)
     tmpiov[0].iov_base = tbuffer;
     tmpiov[0].iov_len = 1 + sizeof(struct rx_header);
 
-    osi_NetSend(socket, &taddr, conn->laddr, tmpiov, 1, 1 + sizeof(struct rx_header), 1);
+    MUTEX_ENTER(&conn->conn_data_lock);
+    laddr = conn->laddr;
+    MUTEX_EXIT(&conn->conn_data_lock);
+
+    osi_NetSend(socket, &taddr, laddr, tmpiov, 1, 1 + sizeof(struct rx_header), 1);
 
     MUTEX_ENTER(&conn->conn_data_lock);
     MUTEX_ENTER(&rx_refcnt_mutex);

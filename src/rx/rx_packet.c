@@ -2281,6 +2281,7 @@ rxi_SendPacket(struct rx_call *call, struct rx_connection *conn,
     int code;
     struct sockaddr_in addr;
     struct rx_peer *peer = conn->peer;
+    afs_uint32 laddr;
     osi_socket socket;
 #ifdef RXDEBUG
     char deliveryType = 'S';
@@ -2314,6 +2315,7 @@ rxi_SendPacket(struct rx_call *call, struct rx_connection *conn,
 	    conn->lastPacketSizeSeq = p->header.seq;
 	}
     }
+    laddr = conn->laddr;
     MUTEX_EXIT(&conn->conn_data_lock);
     /* This is so we can adjust retransmit time-outs better in the face of
      * rapidly changing round-trip times.  RTO estimation is not a la Karn.
@@ -2372,7 +2374,7 @@ rxi_SendPacket(struct rx_call *call, struct rx_connection *conn,
 #endif
 #endif
 	if ((code =
-	     osi_NetSend(socket, &addr, conn->laddr, p->wirevec, p->niovecs,
+	     osi_NetSend(socket, &addr, laddr, p->wirevec, p->niovecs,
 			 p->length + RX_HEADER_SIZE, istack)) != 0) {
 	    /* send failed, so let's hurry up the resend, eh? */
             if (rx_stats_active)
@@ -2438,6 +2440,7 @@ rxi_SendPacketList(struct rx_call *call, struct rx_connection *conn,
 #endif
     struct sockaddr_in addr;
     struct rx_peer *peer = conn->peer;
+    afs_uint32 laddr;
     osi_socket socket;
     struct rx_packet *p = NULL;
     struct iovec wirevec[RX_MAXIOVECS];
@@ -2481,6 +2484,7 @@ rxi_SendPacketList(struct rx_call *call, struct rx_connection *conn,
 	    }
 	}
     }
+    laddr = conn->laddr;
     MUTEX_EXIT(&conn->conn_data_lock);
 
 
@@ -2580,7 +2584,7 @@ rxi_SendPacketList(struct rx_call *call, struct rx_connection *conn,
 	    AFS_GUNLOCK();
 #endif
 	if ((code =
-	     osi_NetSend(socket, &addr, conn->laddr, &wirevec[0], len + 1, length,
+	     osi_NetSend(socket, &addr, laddr, &wirevec[0], len + 1, length,
 			 istack)) != 0) {
 	    /* send failed, so let's hurry up the resend, eh? */
             if (rx_stats_active)
