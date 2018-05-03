@@ -1,8 +1,18 @@
-openafs (1.6.22.2-0ppa1) UNRELEASED; urgency=medium
+openafs (1.6.22.2-0sipb1) unstable; urgency=low
 
+  [ Benjamin Kaduk ]
+  * Apply SIPB-specific configuration changes.  Note that we enable the
+    tivoli TSM code but the IS&T distribution of the TSM libraries do not
+    provide a package which we can build-depend on.  Reader beware....
+
+  [ Anders Kaseorg ]
   * New upstream release, adding support for Linux kernel 4.15.
+  * Backport to wheezy.
+    - Disable systemd support.
+  * debian/patches/multihomed.patch: Send RX replies from the same address
+    on which requests came in.
 
- -- Anders Kaseorg <andersk@mit.edu>  Fri, 06 Apr 2018 17:36:58 -0400
+ -- Anders Kaseorg <andersk@mit.edu>  Thu, 03 May 2018 03:16:19 -0400
 
 openafs (1.6.22-3) unstable; urgency=medium
 
